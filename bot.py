@@ -3,7 +3,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from config import BOT_TOKEN
-from services import add_film_from_kinopoisk, get_random_film, get_all_films, search_films_kinopoisk
+from services import add_film_from_kinopoisk, get_random_film, get_all_films, search_films_kinopoisk, get_film_details_kinopoisk, mark_film_watched, delete_film, get_watched_films
 from database import engine, Base
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -16,7 +16,7 @@ main_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="✅Добавить фильм")],
         [KeyboardButton(text="👀Случайный фильм"), KeyboardButton(text="📋Список фильмов")],
-        [KeyboardButton(text="🧹Очистить чат")]
+        [KeyboardButton(text="🧹Очистить чат"), KeyboardButton(text="⭐Просмотренные фильмы")],
     ],
     resize_keyboard=True
 )
@@ -52,15 +52,22 @@ async def show_film_choices(message: types.Message, state: FSMContext):
 
 @dp.callback_query(AddFilmStates.waiting_for_choice, F.data.startswith("choose_"))
 async def show_film_details_for_add(callback: types.CallbackQuery, state: FSMContext):
-    film_id = int(callback.data.split("_", 1)[1])
-    data = await state.get_data()
-    film = next((f for f in data["films"] if f["kinopoiskId"] == film_id), None)
+    film_id = str(callback.data.split("_", 1)[1])
+    film = await get_film_details_kinopoisk(film_id)
     if not film:
-        await callback.answer("Ошибка выбора фильма.", show_alert=True)
+        await callback.answer("Не удалось получить подробности фильма. Попробуйте позже.", show_alert=True)
         return
     text = f"🎥 <b>{film['title']}</b>\nГод: {film['year'] or '—'}\nЖанр: {film['genre'] or '—'}"
     if film['description']:
         text += f"\nОписание: {film['description']}"
+    if film['director']:
+        text += f"\nРежиссер: {film['director']}"
+    if film['actors']:
+        text += f"\nАктеры: {film['actors']}"
+    if film['country']:
+        text += f"\nСтрана: {film['country']}"
+    if film['rating']:
+        text += f"\nРейтинг Кинопоиск: {film['rating']}"
     if film['trailer_url']:
         text += f"\n<a href='{film['trailer_url']}'>Трейлер</a>"
     if film['poster_url']:
@@ -77,11 +84,12 @@ async def show_film_details_for_add(callback: types.CallbackQuery, state: FSMCon
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
     await state.update_data(selected_film=film)
 
-@dp.callback_query(AddFilmStates.waiting_for_choice, F.data == "add_{film_id}")
+@dp.callback_query(AddFilmStates.waiting_for_choice, F.data.startswith("add_"))
 async def confirm_add_film(callback: types.CallbackQuery, state: FSMContext):
+    film_id = int(callback.data.split("_", 1)[1])
     data = await state.get_data()
     film = data.get("selected_film")
-    if not film:
+    if not film or film["kinopoiskId"] != film_id:
         await callback.answer("Ошибка добавления.", show_alert=True)
         return
     await add_film_from_kinopoisk(film)
@@ -140,10 +148,52 @@ async def show_film_details(callback: types.CallbackQuery):
         text = f"🎥 <b>{film.title}</b>\nГод: {film.year or '—'}\nЖанр: {film.genre or '—'}"
         if film.description:
             text += f"\nОписание: {film.description}"
+        if film.director:
+            text += f"\nРежиссер: {film.director}"
+        if film.actors:
+            text += f"\nАктеры: {film.actors}"
+        if film.country:
+            text += f"\nСтрана: {film.country}"
+        if film.rating:
+            text += f"\nРейтинг Кинопоиск: {film.rating}"
         if film.trailer_url:
             text += f"\n<a href='{film.trailer_url}'>Трейлер</a>"
-        await callback.message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+        if film.poster_url:
+            text += f"\n<a href='{film.poster_url}'>Постер</a>"
+        if film.watch_url:
+            text += f"\n<a href='{film.watch_url}'>Смотреть онлайн</a>"
+        watched_text = "✅ Просмотрено" if film.watched else "❌ Не просмотрено"
+        text += f"\n{watched_text}"
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Удалить", callback_data=f"delete_{film.id}"),
+                 InlineKeyboardButton(text="Отметить как просмотренный", callback_data=f"watched_{film.id}")]
+            ]
+        )
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
     await callback.answer()
+
+@dp.callback_query(F.data.startswith("delete_"))
+async def delete_film_callback(callback: types.CallbackQuery):
+    film_id = int(callback.data.split("_", 1)[1])
+    await delete_film(film_id)
+    await callback.message.edit_text("Фильм удалён из коллекции.")
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("watched_"))
+async def watched_film_callback(callback: types.CallbackQuery):
+    film_id = int(callback.data.split("_", 1)[1])
+    await mark_film_watched(film_id)
+    await callback.message.edit_text("Фильм отмечен как просмотренный!")
+    await callback.answer()
+
+@dp.message(F.text == "⭐Просмотренные фильмы")
+async def watched_list(message: types.Message):
+    films = await get_watched_films()
+    if not films:
+        return await message.answer("Список просмотренных фильмов пуст.")
+    text = "\n".join([f"• {film.title} ({film.year or '—'})" for film in films])
+    await message.answer("⭐ Просмотренные фильмы:\n" + text)
 
 @dp.message(F.text == "🧹Очистить чат")
 async def clear_chat(message: types.Message):

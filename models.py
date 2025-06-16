@@ -9,6 +9,12 @@ class Film(Base):
     genre = Column(String)
     description = Column(String)
     trailer_url = Column(String)
+    poster_url = Column(String)
+    watch_url = Column(String)
+    director = Column(String)
+    actors = Column(String)
+    country = Column(String)
+    rating = Column(String)
     watched = Column(Boolean, default=False)
 
 class UserFilm(Base):
