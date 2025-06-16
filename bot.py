@@ -29,7 +29,7 @@ class AddFilmStates(StatesGroup):
 async def cmd_start(message: types.Message):
     await message.answer("Добро пожаловать в Фильмотеку 🎬\nВыберите действие:", reply_markup=main_kb)
 
-@dp.message(F.text == "Добавить фильм")
+@dp.message(F.text == "✅Добавить фильм")
 async def ask_film_title(message: types.Message, state: FSMContext):
     await message.answer("Введите название фильма для поиска:")
     await state.set_state(AddFilmStates.waiting_for_title)
@@ -105,7 +105,7 @@ async def cancel_add_film(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("Добавление фильма отменено.", reply_markup=None)
     await state.clear()
 
-@dp.message(F.text == "Случайный фильм")
+@dp.message(F.text == "👀Случайный фильм")
 async def cmd_random(message: types.Message):
     film = await get_random_film()
     if film:
@@ -118,7 +118,7 @@ async def cmd_random(message: types.Message):
     else:
         await message.answer("Фильмотека пуста.")
 
-@dp.message(F.text == "Список фильмов")
+@dp.message(F.text == "📋Список фильмов")
 async def cmd_list(message: types.Message):
     films = await get_all_films()
     if not films:
@@ -145,7 +145,7 @@ async def show_film_details(callback: types.CallbackQuery):
         await callback.message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
     await callback.answer()
 
-@dp.message(F.text == "Очистить чат")
+@dp.message(F.text == "🧹Очистить чат")
 async def clear_chat(message: types.Message):
     await message.answer("Чат очищен! (Удалите сообщения вручную, если нужно)")
 
