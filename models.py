@@ -16,6 +16,9 @@ class Film(Base):
     country = Column(String)
     rating = Column(String)
     watched = Column(Boolean, default=False)
+    profile = Column(String, nullable=False)
+    rating_user = Column(Integer)
+    comment_user = Column(String)
 
 class UserFilm(Base):
     __tablename__ = "user_films"

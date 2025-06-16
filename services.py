@@ -31,24 +31,33 @@ async def search_films_kinopoisk(title: str, limit: int = 5):
                 })
             return result
 
+def safe_first(lst, key=None):
+    if lst and len(lst) > 0:
+        return lst[0].get(key) if key and isinstance(lst[0], dict) else lst[0]
+    return None
+
 async def get_film_details_kinopoisk(film_id: str):
     headers = {"X-API-KEY": KINOPOISK_API_TOKEN}
     try:
+        print(f"[DEBUG] Запрос деталей фильма: {film_id}")
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{KINOPOISK_API_MOVIE}{film_id}", headers=headers, timeout=10) as resp:
+                print(f"[DEBUG] Статус ответа: {resp.status}")
                 if resp.status != 200:
                     print(f"Kinopoisk API error: status {resp.status}")
+                    print(f"[DEBUG] Текст ответа: {await resp.text()}")
                     return None
                 film = await resp.json()
+                print(f"[DEBUG] Ответ JSON: {film}")
                 return {
                     "kinopoiskId": film.get("id"),
                     "title": film.get("name"),
                     "year": film.get("year"),
                     "genre": ", ".join([g.get("name") for g in film.get("genres", [])]),
                     "description": film.get("description"),
-                    "trailer_url": film.get("videos", {}).get("trailers", [{}])[0].get("url"),
+                    "trailer_url": safe_first(film.get("videos", {}).get("trailers", []), "url"),
                     "poster_url": film.get("poster", {}).get("url"),
-                    "watch_url": film.get("watchability", {}).get("items", [{}])[0].get("url"),
+                    "watch_url": safe_first(film.get("watchability", {}).get("items", []), "url"),
                     "director": ", ".join([p.get("name") for p in film.get("persons", []) if p.get("profession") == "режиссеры"]),
                     "actors": ", ".join([p.get("name") for p in film.get("persons", []) if p.get("profession") == "актеры"][:5]),
                     "country": ", ".join([c.get("name") for c in film.get("countries", [])]),
@@ -62,7 +71,7 @@ async def get_film_details_kinopoisk(film_id: str):
         print(f"Error fetching film details: {e}")
         return None
 
-async def add_film_from_kinopoisk(film_data: dict):
+async def add_film_from_kinopoisk(film_data: dict, profile: str):
     async with SessionLocal() as session:
         session.add(Film(
             title=film_data["title"],
@@ -76,7 +85,8 @@ async def add_film_from_kinopoisk(film_data: dict):
             actors=film_data.get("actors"),
             country=film_data.get("country"),
             rating=film_data.get("rating"),
-            watched=film_data.get("watched", False)
+            watched=film_data.get("watched", False),
+            profile=profile
         ))
         await session.commit()
 
@@ -94,18 +104,18 @@ async def delete_film(film_id: int):
             await session.delete(film)
             await session.commit()
 
-async def get_watched_films():
+async def get_watched_films(profile: str):
     async with SessionLocal() as session:
-        result = await session.execute(select(Film).where(Film.watched == True))
+        result = await session.execute(select(Film).where(Film.watched == True, Film.profile == profile))
         return result.scalars().all()
 
-async def get_random_film():
+async def get_random_film(profile: str):
     async with SessionLocal() as session:
-        result = await session.execute(select(Film))
+        result = await session.execute(select(Film).where(Film.profile == profile))
         films = result.scalars().all()
         return random.choice(films) if films else None
 
-async def get_all_films():
+async def get_all_films(profile: str):
     async with SessionLocal() as session:
-        result = await session.execute(select(Film))
+        result = await session.execute(select(Film).where(Film.profile == profile))
         return result.scalars().all() 
