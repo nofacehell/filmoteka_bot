@@ -189,7 +189,15 @@ async def watched_list(message: types.Message, state: FSMContext, **kwargs):
     films = await get_watched_films(profile)
     if not films:
         return await message.answer("Список просмотренных фильмов пуст.")
-    text = "\n".join([f"• {film.title} ({film.year or '—'})" for film in films])
+    blocks = []
+    for film in films:
+        block = f"• {film.title} ({film.year or '—'})"
+        if film.rating_user:
+            block += f"\nОценка: {film.rating_user}/10"
+        if film.comment_user:
+            block += f"\nОтзыв: {film.comment_user}"
+        blocks.append(block)
+    text = "\n\n".join(blocks)
     await message.answer("⭐ Просмотренные фильмы:\n" + text)
 
 @dp.message(StateFilter(UserStates.user_selected), F.text == "📋Список фильмов")
